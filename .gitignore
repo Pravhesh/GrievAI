@@ -1,0 +1,46 @@
+# Node / front-end
+node_modules/
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+
+# Build output
+build/
+dist/
+
+# Environment variables
+.env
+.env.*
+
+# React / Vite
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+
+# Hardhat
+artifacts/
+cache/
+typechain/
+coverage/
+
+# Solidity coverage
+.solcover.js
+coverage.json
+
+# Python virtual envs & artifacts
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+
+# IDE / tooling
+.idea/
+.vscode/
+*.swp
+
+# Misc
+*.pid
