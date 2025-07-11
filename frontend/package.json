@@ -1,0 +1,23 @@
+{
+  "name": "grievai-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "React + Tailwind frontend for GrievAI",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "ethers": "^6.9.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "tailwindcss": "^3.4.4",
+    "postcss": "^8.4.32",
+    "autoprefixer": "^10.4.16"
+  }
+}
