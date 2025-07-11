@@ -44,3 +44,6 @@ __pycache__/
 
 # Misc
 *.pid
+# lockfiles
+package-lock.json
+frontend/package-lock.json
