@@ -1,14 +1,25 @@
 import { useState } from "react";
+import axios from "axios";
 import "./index.css";
 
 function App() {
   const [text, setText] = useState("");
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!text.trim()) return;
-    // TODO: integrate with backend API
-    alert(`Submitted grievance: ${text}`);
+    setLoading(true);
+    try {
+      const res = await axios.post("http://localhost:8000/classify", { text });
+      setResult(res.data);
+    } catch (err) {
+      console.error(err);
+      alert("Error communicating with AI service");
+    } finally {
+      setLoading(false);
+    }
     setText("");
   };
 
@@ -36,6 +47,13 @@ function App() {
           Submit Complaint
         </button>
       </form>
+      {loading && <p className="text-gray-700">Classifying...</p>}
+      {result && (
+        <div className="mt-4 p-4 bg-green-100 rounded">
+          <p><strong>Predicted Category:</strong> {result.label}</p>
+          <p><strong>Confidence:</strong> {(result.score * 100).toFixed(2)}%</p>
+        </div>
+      )}
     </div>
   );
 }
