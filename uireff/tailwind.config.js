@@ -1,5 +1,5 @@
 /** @type {import('tailwindcss').Config} */
-const defaultConfig = require("shadcn/ui/tailwind-config")
+const defaultConfig = { theme: { extend: { colors: { primary: {} } } }, plugins: [] }
 
 module.exports = {
   ...defaultConfig,
