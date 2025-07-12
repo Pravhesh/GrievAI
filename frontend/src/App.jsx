@@ -10,15 +10,41 @@ function App() {
   const [result, setResult] = useState(null);
   const [account, setAccount] = useState(null);
   const [txHash, setTxHash] = useState(null);
+  const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
+    setError(null);
     e.preventDefault();
     if (!text.trim()) return;
     setLoading(true);
     try {
-      const res = await axios.post("http://localhost:8000/classify", { text });
-      setResult(res.data);
+      // 1. AI Classification
+      let aiRes;
+      try {
+        const res = await axios.post("http://localhost:8000/classify", { text });
+        aiRes = res.data;
+        setResult(aiRes);
+      } catch (aiErr) {
+        console.error(aiErr);
+        setError("Failed to contact AI service");
+        return;
+      }
+
+      // 2. On-chain submission (optional)
+      if (window.ethereum && account) {
+        try {
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          const signer = await provider.getSigner();
+          const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, signer);
+          const tx = await contract.submitComplaint(text);
+          setTxHash(tx.hash);
+          await tx.wait();
+        } catch (chainErr) {
+          console.error(chainErr);
+          setError("Blockchain transaction failed");
+        }
+      }
 
       // On-chain submission
       if (window.ethereum && account) {
@@ -86,7 +112,10 @@ function App() {
           <p><strong>Confidence:</strong> {(result.score * 100).toFixed(2)}%</p>
         </div>
       )}
-    {txHash && (
+    {error && (
+        <p className="mt-2 text-red-600">{error}</p>
+      )}
+      {txHash && (
         <p className="mt-2 text-blue-600">
           Transaction submitted: <a className="underline" target="_blank" rel="noopener noreferrer" href={`https://sepolia.etherscan.io/tx/${txHash}`}>{txHash.slice(0,10)}...</a>
         </p>
