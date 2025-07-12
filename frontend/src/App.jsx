@@ -29,7 +29,25 @@ import ToastContainer from "./components/ToastContainer";
 // Helper to format addresses
 const formatAddress = (addr) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 
-  // Helper to connect wallet and ensure Sepolia chain
+// --- removed top-level connectWallet (moved inside App) ---
+
+function App() {
+  const [text, setText] = useState("");
+  const [aiResult, setAiResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [txHash, setTxHash] = useState(null);
+  const [account, setAccount] = useState(null);
+  const [complaints, setComplaints] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [complaintsLoading, setComplaintsLoading] = useState(false);
+  const [isOfficial, setIsOfficial] = useState(false);
+  const [proposals, setProposals] = useState([]);
+  // Toasts state
+  const [toasts, setToasts] = useState([]);
+  const [activeTab, setActiveTab] = useState('submit');
+  const isBusy = loading || complaintsLoading;
+
+  // Connect wallet & ensure Sepolia chain
   const connectWallet = async () => {
     if (!window.ethereum) return alert("MetaMask not detected");
     try {
@@ -56,27 +74,15 @@ const formatAddress = (addr) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
       }
       const [addr] = await window.ethereum.request({ method: "eth_requestAccounts" });
       setAccount(addr);
+      // Reload complaints under the new account context
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      await loadComplaints(signer);
     } catch (err) {
       console.error("connectWallet error", err);
       alert("Failed to connect wallet");
     }
   };
-
-function App() {
-  const [text, setText] = useState("");
-  const [aiResult, setAiResult] = useState(null);
-  const [error, setError] = useState(null);
-  const [txHash, setTxHash] = useState(null);
-  const [account, setAccount] = useState(null);
-  const [complaints, setComplaints] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [complaintsLoading, setComplaintsLoading] = useState(false);
-  const [isOfficial, setIsOfficial] = useState(false);
-  const [proposals, setProposals] = useState([]);
-  // Toasts state
-  const [toasts, setToasts] = useState([]);
-  const [activeTab, setActiveTab] = useState('submit');
-  const isBusy = loading || complaintsLoading;
   
 
   const addToast = (message, type = "success") => {
