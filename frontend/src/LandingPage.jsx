@@ -39,7 +39,7 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-green-50 via-teal-50 to-sky-50 text-gray-800 font-sans">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-100 via-teal-50 to-sky-100 text-gray-800 font-sans">
       {/* Hero */}
       <section ref={heroRef} className="max-w-5xl mx-auto px-6 pt-24 pb-32 text-center">
         <h1 className="text-5xl sm:text-6xl font-extrabold leading-tight mb-6">
