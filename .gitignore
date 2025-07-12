@@ -43,6 +43,7 @@ __pycache__/
 *.swp
 
 # Misc
+reff.txt
 *.pid
 # lockfiles
 package-lock.json
