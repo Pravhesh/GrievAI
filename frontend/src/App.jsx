@@ -160,37 +160,51 @@ function App() {
         console.error('No contract code found at address. Did you redeploy?');
       }
 
-      // Load complaints
-      const count = await contract.complaintCount();
-      console.log('Total complaints to load:', count);
-      const total = Number(count);
-      const ids = Array.from({ length: total }, (_, i) => i + 1);
-      
-      const all = await Promise.all(
-        ids.map(async (id) => {
-          console.log(`Loading complaint with ID: ${id}`);
-          try {
-            const c = await contract.complaints(id);
-            console.log('Complaint loaded:', c);
-            return {
-              id,
-              complainant: c.complainant,
-              description: c.description,
-              category: Number(c.category), // Ensure category is a number
-              timestamp: Number(c.timestamp),
-              status: Number(c.status)
-            };
-          } catch (err) {
-            console.error(`Error loading complaint ${id}:`, err);
-            return null;
-          }
+      // Load complaints via past events instead of looping through mapping
+      console.log('Fetching complaints via events...');
+      const submittedEvents = await contract.queryFilter(contract.filters.ComplaintSubmitted());
+      const resolvedEvents = await contract.queryFilter(contract.filters.ComplaintResolved());
+      const escalatedEvents = await contract.queryFilter(contract.filters.ComplaintEscalated());
+
+      // Build base complaints from ComplaintSubmitted events
+      const baseComplaints = await Promise.all(
+        submittedEvents.map(async (ev) => {
+          const { id, complainant, description, category } = ev.args;
+          const block = await provider.getBlock(ev.blockNumber);
+          return {
+            id: Number(id),
+            complainant,
+            description,
+            category: Number(category),
+            timestamp: Number(block.timestamp) * 1000, // to ms for Date()
+            status: 0, // Submitted by default; may change below
+          };
         })
       );
-      
-      // Filter out any null values from failed fetches
-      const validComplaints = all.filter(c => c !== null);
-      console.log('All valid complaints loaded:', validComplaints);
-      setComplaints(validComplaints.reverse());
+
+      const complaintsMap = {};
+      baseComplaints.forEach((c) => {
+        complaintsMap[c.id] = c;
+      });
+
+      // Apply status changes from other events
+      resolvedEvents.forEach((ev) => {
+        const { id } = ev.args;
+        if (complaintsMap[Number(id)]) {
+          complaintsMap[Number(id)].status = 1; // Resolved
+        }
+      });
+
+      escalatedEvents.forEach((ev) => {
+        const { id } = ev.args;
+        if (complaintsMap[Number(id)]) {
+          complaintsMap[Number(id)].status = 2; // Escalated
+        }
+      });
+
+      const eventComplaints = Object.values(complaintsMap).sort((a, b) => b.timestamp - a.timestamp);
+      console.log('Complaints from events:', eventComplaints);
+      setComplaints(eventComplaints);
       
       // Load proposals if official
       if (signer) {
