@@ -39,7 +39,7 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-100 via-teal-50 to-sky-100 text-gray-800 font-sans">
+    <div className="min-h-screen bg-gradient-to-b from-emerald-300 via-teal-200 to-sky-300 text-gray-800 font-sans">
       {/* Hero */}
       <section ref={heroRef} className="max-w-5xl mx-auto px-6 pt-24 pb-32 text-center">
         <h1 className="text-5xl sm:text-6xl font-extrabold leading-tight mb-6">
@@ -103,7 +103,7 @@ export default function LandingPage() {
       </section>
 
       {/* Call to action */}
-      <section className="text-center py-20 bg-white">
+      <section className="text-center py-20 bg-transparent">
         <h2 className="text-3xl sm:text-4xl font-bold mb-6">Join the governance revolution</h2>
         <p className="mb-8 max-w-xl mx-auto text-gray-600">
           Whether you’re a citizen, official, or developer, GrievAI offers the tools to resolve issues transparently and efficiently.
@@ -116,7 +116,7 @@ export default function LandingPage() {
         </Link>
       </section>
 
-      <footer className="text-center py-8 text-sm text-gray-500 bg-white">
+      <footer className="text-center py-8 text-sm text-gray-700 bg-transparent">
         © {new Date().getFullYear()} GrievAI. All rights reserved.
       </footer>
     </div>
