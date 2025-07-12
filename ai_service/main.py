@@ -1,8 +1,18 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from transformers import pipeline
 
 app = FastAPI(title="GrievAI Classifier", version="0.1.0")
+
+# Allow frontend running on Vite (localhost:5173) to call this API
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Zero-shot classifier for quick hackathon demo
 classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
