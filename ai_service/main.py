@@ -8,7 +8,7 @@ app = FastAPI(title="GrievAI Classifier", version="0.1.0")
 # Allow frontend running on Vite (localhost:5173) to call this API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost", "http://localhost:5173", "http://localhost:5174", "*"],
+    allow_origins=["http://localhost", "http://localhost:5173", "http://localhost:5174"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

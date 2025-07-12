@@ -46,6 +46,18 @@ contract ComplaintRegistry {
     }
 
     /**
+     * @notice Get all complaints in the system
+     * @return Array of all complaints (including empty slots for deleted complaints)
+     */
+    function getAllComplaints() external view returns (Complaint[] memory) {
+        Complaint[] memory allComplaints = new Complaint[](complaintCount);
+        for (uint256 i = 1; i <= complaintCount; i++) {
+            allComplaints[i - 1] = complaints[i];
+        }
+        return allComplaints;
+    }
+
+    /**
      * @notice Submit a new grievance
      * @param description Free-text complaint description
      * @return id Complaint ID
