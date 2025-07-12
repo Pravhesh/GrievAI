@@ -145,6 +145,46 @@ async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "GrievAI Classifier"}
 
+# === JSON-RPC proxy to hide upstream RPC URL ===
+import httpx
+
+UPSTREAM_RPC_URL = os.getenv("UPSTREAM_RPC_URL", "https://rpc.sepolia.org")
+
+from notifications import send_email, send_sms
+
+@app.post("/notify")
+async def send_notification(payload: dict):
+    """Trigger email/SMS notification from frontend.
+    Expects JSON {"subject": str, "message": str}
+    """
+    subject = payload.get("subject", "GrievAI update")
+    message = payload.get("message", "")
+    if not message:
+        raise HTTPException(status_code=400, detail="message required")
+    send_email(subject, message)
+    send_sms(message)
+    return {"status": "sent"}
+
+
+@app.post("/rpc")
+async def rpc_proxy(request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    headers = {"Content-Type": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            upstream_resp = await client.post(UPSTREAM_RPC_URL, json=payload, headers=headers)
+        return JSONResponse(status_code=upstream_resp.status_code, content=upstream_resp.json())
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=503, detail="Upstream RPC timeout")
+    except Exception as e:
+        logger.error(f"RPC proxy error: {e}")
+        raise HTTPException(status_code=502, detail="Bad gateway")
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
     return JSONResponse(
