@@ -21,11 +21,46 @@ const READONLY_PROVIDER = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
 // Helper to get a Contract instance from any provider or signer
 const getContract = (providerOrSigner) => new ethers.Contract(NORMALIZED_ADDRESS, abi, providerOrSigner);
 import "./index.css";
+import Header from "./components/Header";
+import TabSwitcher from "./components/TabSwitcher";
 import Spinner from "./components/Spinner";
 import ToastContainer from "./components/ToastContainer";
 
 // Helper to format addresses
 const formatAddress = (addr) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+
+  // Helper to connect wallet and ensure Sepolia chain
+  const connectWallet = async () => {
+    if (!window.ethereum) return alert("MetaMask not detected");
+    try {
+      let chainId = await window.ethereum.request({ method: "eth_chainId" });
+      if (chainId !== SEPOLIA_CHAIN_ID) {
+        try {
+          await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: SEPOLIA_CHAIN_ID }] });
+        } catch (switchErr) {
+          if (switchErr.code === 4902) {
+            await window.ethereum.request({
+              method: "wallet_addEthereumChain",
+              params: [{
+                chainId: SEPOLIA_CHAIN_ID,
+                chainName: "Sepolia Testnet",
+                rpcUrls: [SEPOLIA_RPC_URL],
+                nativeCurrency: { name: "SepoliaETH", symbol: "ETH", decimals: 18 },
+                blockExplorerUrls: ["https://sepolia.etherscan.io"],
+              }],
+            });
+          } else {
+            throw switchErr;
+          }
+        }
+      }
+      const [addr] = await window.ethereum.request({ method: "eth_requestAccounts" });
+      setAccount(addr);
+    } catch (err) {
+      console.error("connectWallet error", err);
+      alert("Failed to connect wallet");
+    }
+  };
 
 function App() {
   const [text, setText] = useState("");
@@ -40,6 +75,9 @@ function App() {
   const [proposals, setProposals] = useState([]);
   // Toasts state
   const [toasts, setToasts] = useState([]);
+  const [activeTab, setActiveTab] = useState('submit');
+  const isBusy = loading || complaintsLoading;
+  
 
   const addToast = (message, type = "success") => {
     const id = Date.now() + Math.random();
@@ -62,7 +100,7 @@ function App() {
     };
   }, []);
 
-  const isBusy = loading || complaintsLoading;
+  
 
   const categories = [
     "Water",
@@ -408,8 +446,9 @@ function App() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-start p-4">
-      <h1 className="text-3xl font-bold mb-6">GrievAI</h1>
-      {!account && (
+      <Header account={account} connectWallet={connectWallet} />
+      <TabSwitcher active={activeTab} onChange={setActiveTab} />
+      {false && !account && (
         <button
           onClick={async () => {
             if (!window.ethereum) return alert("MetaMask not detected");
@@ -450,8 +489,9 @@ function App() {
           Connect Wallet
         </button>
       )}
-      {account && <p className="text-sm text-gray-600 mb-2">Connected: {account.slice(0,6)}...{account.slice(-4)}</p>}
-      <form
+      {false && account && <p className="text-sm text-gray-600 mb-2">Connected: {account.slice(0,6)}...{account.slice(-4)}</p>}
+      {activeTab === 'submit' && (
+        <form
         onSubmit={handleSubmit}
         className="w-full max-w-xl bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4"
       >
@@ -480,6 +520,7 @@ function App() {
           {loading ? 'Submitting...' : 'Submit Complaint'}
         </button>
       </form>
+      )}
       {loading && <p className="text-gray-700">Processing...</p>}
       {aiResult && (
         <div className="mt-4 p-4 bg-green-100 rounded">
@@ -495,8 +536,10 @@ function App() {
           Transaction submitted: <a className="underline" target="_blank" rel="noopener noreferrer" href={`https://sepolia.etherscan.io/tx/${txHash}`}>{txHash.slice(0,10)}...</a>
         </p>
       )}
-      {complaintsLoading && <p className="mt-4 text-gray-700">Loading complaints...</p>}
-      {!complaintsLoading && (
+      {activeTab === 'complaints' && complaintsLoading && (
+        <p className="mt-4 text-gray-700">Loading complaints...</p>
+      )}
+      {activeTab === 'complaints' && !complaintsLoading && (
         <div className="w-full max-w-4xl mt-6">
           <h2 className="text-2xl font-semibold mb-4">Complaints</h2>
           <div className="grid gap-4">
