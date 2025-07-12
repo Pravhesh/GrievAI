@@ -21,6 +21,8 @@ const READONLY_PROVIDER = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
 // Helper to get a Contract instance from any provider or signer
 const getContract = (providerOrSigner) => new ethers.Contract(NORMALIZED_ADDRESS, abi, providerOrSigner);
 import "./index.css";
+import Spinner from "./components/Spinner";
+import ToastContainer from "./components/ToastContainer";
 
 // Helper to format addresses
 const formatAddress = (addr) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
@@ -36,6 +38,31 @@ function App() {
   const [complaintsLoading, setComplaintsLoading] = useState(false);
   const [isOfficial, setIsOfficial] = useState(false);
   const [proposals, setProposals] = useState([]);
+  // Toasts state
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = (message, type = "success") => {
+    const id = Date.now() + Math.random();
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => removeToast(id), 4000);
+  };
+
+  const removeToast = (id) => setToasts((prev) => prev.filter((t) => t.id !== id));
+
+  // Override alert() so existing calls automatically become toasts
+  useEffect(() => {
+    const origAlert = window.alert;
+    window.alert = (msg) => {
+      const text = String(msg);
+      const isError = text.toLowerCase().includes("error") || text.startsWith("❌");
+      addToast(text, isError ? "error" : "success");
+    };
+    return () => {
+      window.alert = origAlert;
+    };
+  }, []);
+
+  const isBusy = loading || complaintsLoading;
 
   const categories = [
     "Water",
@@ -568,6 +595,12 @@ function App() {
           </div>
         </div>
       )}
+      {isBusy && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black/30 backdrop-blur-sm z-40">
+          <Spinner size={64} />
+        </div>
+      )}
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
     </div>
   );
 }
