@@ -38,7 +38,7 @@ export default function LandingPage() {
     return () => io.disconnect();
   }, []);
 
-
+  return (
     <div className="min-h-screen bg-gradient-to-b from-green-50 via-teal-50 to-sky-50 text-gray-800 font-sans">
       {/* Hero */}
       <section ref={heroRef} className="max-w-5xl mx-auto px-6 pt-24 pb-32 text-center">
