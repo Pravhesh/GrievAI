@@ -10,7 +10,8 @@ ReactDOM.createRoot(document.getElementById("root")).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
-        <Route path="/" element={<LandingPage />} />
+        <Route path="/" element={<AppRedesign />} />
+        <Route path="/old" element={<LandingPage />} />
         <Route path="/app" element={<App />} />
         <Route path="/redesign" element={<AppRedesign />} />
       </Routes>
