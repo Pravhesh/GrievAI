@@ -1,8 +1,22 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { ethers } from "ethers";
-import abi from "./contracts/ComplaintRegistryABI.json";
+import contractData from "./contracts/ComplaintRegistry.json";
+const abi = contractData.abi;
 import { CONTRACT_ADDRESS, SEPOLIA_CHAIN_ID } from "./config";
+
+// Safely normalize contract address (skip checksum if invalid)
+let NORMALIZED_ADDRESS;
+try {
+  NORMALIZED_ADDRESS = ethers.getAddress(CONTRACT_ADDRESS);
+} catch (_) {
+  // Fallback: use raw address (ethers will still accept it when instantiating a Contract)
+  console.warn("Warning: CONTRACT_ADDRESS failed checksum validation; using raw address");
+  NORMALIZED_ADDRESS = CONTRACT_ADDRESS.toLowerCase();
+}
+
+// Helper to get a Contract instance from any provider or signer
+const getContract = (providerOrSigner) => new ethers.Contract(NORMALIZED_ADDRESS, abi, providerOrSigner);
 import "./index.css";
 
 // Helper to format addresses
@@ -10,58 +24,135 @@ const formatAddress = (addr) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 
 function App() {
   const [text, setText] = useState("");
-  const [result, setResult] = useState(null);
-  const [account, setAccount] = useState(null);
-  const [txHash, setTxHash] = useState(null);
+  const [aiResult, setAiResult] = useState(null);
   const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [txHash, setTxHash] = useState(null);
+  const [account, setAccount] = useState(null);
   const [complaints, setComplaints] = useState([]);
-  const [proposals, setProposals] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [complaintsLoading, setComplaintsLoading] = useState(false);
   const [isOfficial, setIsOfficial] = useState(false);
+  const [proposals, setProposals] = useState([]);
+
+  const categories = [
+    "Water",
+    "Road",
+    "Electricity",
+    "Sanitation",
+    "Health",
+    "Education",
+    "Other"
+  ];
 
   const handleSubmit = async (e) => {
-    setError(null);
     e.preventDefault();
-    if (!text.trim()) return;
-    setLoading(true);
+    setError(null);
+    setAiResult(null);
+    setTxHash(null);
+
+    if (!text.trim()) {
+      setError("Please enter a complaint");
+      return;
+    }
+
+    if (!window.ethereum) {
+      setError("Please install MetaMask to submit a complaint");
+      return;
+    }
+
     try {
-      // 1. AI Classification
-      let aiRes;
+      setLoading(true);
+
+      // 1. Get AI classification (fallback to 'Other' if service unavailable)
+      let predictedCategory = 'Other';
       try {
-        const res = await axios.post("http://localhost:8000/classify", { text });
-        aiRes = res.data;
-        setResult(aiRes);
+        const aiResponse = await axios.post('http://localhost:8000/classify', { text });
+        setAiResult(aiResponse.data);
+        predictedCategory = aiResponse.data.label || 'Other';
       } catch (aiErr) {
-        console.error(aiErr);
-        setError("Failed to contact AI service");
-        return;
+        console.warn('AI service unavailable, defaulting category to Other', aiErr);
+        // Keep aiResult null so UI can indicate defaulting
+      }
+      const categoryIndex = categories.indexOf(predictedCategory);
+      
+      if (categoryIndex === -1) {
+        throw new Error("Failed to determine a valid category for the complaint");
       }
 
-      // 2. On-chain submission (optional)
-      if (window.ethereum && account) {
+      console.log("Submitting complaint with category:", {
+        text,
+        category: predictedCategory,
+        categoryIndex,
+        contractAddress: CONTRACT_ADDRESS
+      });
+
+      // 2. Submit to blockchain with AI-determined category
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      
+      const contract = getContract(signer);
+      
+      console.log("Contract instance created with address:", NORMALIZED_ADDRESS);
+      
+      try {
+        // First, try with the category index as a number
+        console.log("Attempting to submit with category as number:", categoryIndex);
+        
+        // Get the function fragment to check if it exists
+        const submitFunction = contract.interface.getFunction('submitComplaint');
+        console.log("Submit function found:", submitFunction);
+        
+        // Encode the function call data manually to see what's being sent
+        const callData = contract.interface.encodeFunctionData('submitComplaint', [text, categoryIndex]);
+        console.log("Encoded call data:", callData);
+        
+        // Send the transaction with explicit data
+        const tx = await signer.sendTransaction({
+          to: CONTRACT_ADDRESS,
+          data: callData,
+          gasLimit: 1000000,
+          gasPrice: await provider.getFeeData().then(feeData => feeData.gasPrice * 2n)
+        });
+        
+        console.log("Transaction sent:", tx.hash);
+        return tx;
+      } catch (firstError) {
+        console.log("First attempt failed, trying with BigInt...", firstError);
+        
+        // If that fails, try with BigInt
         try {
-          const provider = new ethers.BrowserProvider(window.ethereum);
-          const signer = await provider.getSigner();
-          const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, signer);
-          const tx = await contract.submitComplaint(text);
-          setTxHash(tx.hash);
-          await tx.wait();
-          await loadComplaints();
-        } catch (chainErr) {
-          console.error(chainErr);
-          setError("Blockchain transaction failed");
+          const tx = await contract.submitComplaint(text, BigInt(categoryIndex), {
+            gasLimit: 1000000,
+            gasPrice: await provider.getFeeData().then(feeData => feeData.gasPrice * 2n)
+          });
+          return tx;
+        } catch (secondError) {
+          console.error("Second attempt failed:", secondError);
+          throw new Error(`Failed to submit complaint: ${secondError.message}`);
         }
       }
-
+      setTxHash(tx.hash);
+      await tx.wait();
       
+      // 3. Refresh complaints
+      await loadComplaints(signer);
+      
+      // Clear form and show success message
+      setText("");
+      setAiResult(null);
+      
+      // Show success message with category
+      alert(`✅ Complaint submitted successfully!\n\nCategory: ${predictedCategory}`);
     } catch (err) {
-      console.error(err);
-      alert("Error communicating with AI service");
+      console.error("Error in handleSubmit:", err);
+      const errorMessage = err.response?.data?.detail || 
+                         err.message || 
+                         "Failed to submit complaint";
+      setError(errorMessage);
+      alert(`❌ Error: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
-    setText("");
   };
 
   // Load complaints and check official status
@@ -70,7 +161,7 @@ function App() {
     try {
       setComplaintsLoading(true);
       const provider = new ethers.BrowserProvider(window.ethereum);
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, provider);
+      const contract = getContract(provider);
       
       // Load complaints
       const count = await contract.complaintCount();
@@ -79,49 +170,70 @@ function App() {
       
       const all = await Promise.all(
         ids.map(async (id) => {
-          const c = await contract.getComplaint(id);
-          return {
-            id,
-            complainant: c.complainant,
-            description: c.description,
-            timestamp: Number(c.timestamp),
-            status: Number(c.status)
-          };
+          try {
+            const c = await contract.complaints(id);
+            return {
+              id,
+              complainant: c.complainant,
+              description: c.description,
+              category: Number(c.category), // Ensure category is a number
+              timestamp: Number(c.timestamp),
+              status: Number(c.status)
+            };
+          } catch (err) {
+            console.error(`Error loading complaint ${id}:`, err);
+            return null;
+          }
         })
       );
-      setComplaints(all.reverse());
+      
+      // Filter out any null values from failed fetches
+      const validComplaints = all.filter(c => c !== null);
+      setComplaints(validComplaints.reverse());
       
       // Load proposals if official
       if (signer) {
-        const officialStatus = await contract.officials(await signer.getAddress());
-        setIsOfficial(officialStatus);
-        
-        if (officialStatus) {
-          const proposalCount = await contract.proposalCount();
-          const proposalIds = Array.from({ length: Number(proposalCount) }, (_, i) => i + 1);
+        try {
+          const signerAddress = await signer.getAddress();
+          console.log('Signer address:', signerAddress);
+          const officialStatus = await contract.officials(signerAddress);
+          console.log('Official status for', signerAddress, ':', officialStatus);
+          setIsOfficial(officialStatus);
           
-          const allProposals = await Promise.all(
-            proposalIds.map(async (id) => {
-              const p = await contract.proposals(id);
-              const hasVoted = await contract.hasVoted(id, await signer.getAddress());
-              return {
-                id,
-                complaintId: p.complaintId.toString(),
-                isEscalation: p.isEscalation,
-                voteStart: Number(p.voteStart),
-                voteEnd: Number(p.voteEnd),
-                forVotes: Number(p.forVotes),
-                againstVotes: Number(p.againstVotes),
-                executed: p.executed,
-                hasVoted
-              };
-            })
-          );
-          setProposals(allProposals);
+          if (officialStatus) {
+            const proposalCount = await contract.proposalCount();
+            const proposalIds = Array.from({ length: Number(proposalCount) }, (_, i) => i + 1);
+            
+            const allProposals = await Promise.all(
+              proposalIds.map(async (id) => {
+                try {
+                  const p = await contract.proposals(id);
+                  return {
+                    id,
+                    complaintId: p.complaintId.toString(),
+                    isEscalation: p.isEscalation,
+                    voteStart: Number(p.voteStart),
+                    voteEnd: Number(p.voteEnd),
+                    forVotes: Number(p.forVotes),
+                    againstVotes: Number(p.againstVotes),
+                    executed: p.executed,
+                    hasVoted: false
+                  };
+                } catch (err) {
+                  console.error(`Error loading proposal ${id}:`, err);
+                  return null;
+                }
+              })
+            ).then(proposals => proposals.filter(p => p !== null));
+            setProposals(allProposals);
+          }
+        } catch (err) {
+          console.error("Error loading official data:", err);
         }
       }
     } catch (err) {
       console.error("Error loading data:", err);
+      setError("Failed to load complaints. Please try again later.");
     } finally {
       setComplaintsLoading(false);
     }
@@ -133,7 +245,7 @@ function App() {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, signer);
+      const contract = getContract(signer);
       
       const tx = await contract.proposeAction(complaintId, isEscalation);
       await tx.wait();
@@ -147,29 +259,69 @@ function App() {
 
   // Handle voting on a proposal
   const handleVote = async (proposalId, support) => {
-    if (!window.ethereum) return;
+    if (!window.ethereum) return alert("MetaMask not detected");
+    
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, signer);
+      const contract = getContract(signer);
       
-      const tx = await contract.castVote(proposalId, support);
-      await tx.wait();
-      await loadComplaints(signer);
-      alert(`Vote ${support ? 'for' : 'against'} proposal #${proposalId} recorded!`);
+      // Check if the voting period is still active
+      const proposal = await contract.proposals(proposalId);
+      const currentBlock = await provider.getBlockNumber();
+      
+      if (currentBlock < proposal.voteStart) {
+        return alert("Voting has not started yet for this proposal.");
+      }
+      
+      if (currentBlock > proposal.voteEnd) {
+        return alert("Voting period has ended for this proposal.");
+      }
+      
+      // Check if already voted (note: this might not be 100% accurate due to ABI limitations)
+      // We'll handle the actual voting state on-chain
+      
+      setLoading(true);
+      
+      try {
+        const tx = await contract.castVote(proposalId, support);
+        const receipt = await tx.wait();
+        
+        if (receipt.status === 1) {
+          // Transaction was successful
+          await loadComplaints(signer);
+          alert(`Successfully voted ${support ? 'for' : 'against'} the proposal!`);
+        } else {
+          throw new Error("Transaction was not successful");
+        }
+      } catch (txError) {
+        console.error("Transaction error:", txError);
+        let errorMessage = txError.message || "Failed to submit vote";
+        
+        // Try to extract a more specific error message
+        if (txError.receipt && txError.receipt.logs) {
+          // Check for specific error events if any
+          errorMessage = "Transaction reverted. You may have already voted or the voting period may have ended.";
+        }
+        
+        alert(`Error: ${errorMessage}`);
+      }
     } catch (err) {
-      console.error("Error voting:", err);
-      alert("Failed to vote: " + (err.reason || err.message));
+      console.error("Error in handleVote:", err);
+      alert(`Failed to vote: ${err.message || "Unknown error occurred"}`);
+    } finally {
+      setLoading(false);
     }
   };
-
-  // Handle executing a proposal
+  
   const handleExecuteProposal = async (proposalId) => {
-    if (!window.ethereum) return;
+    if (!window.ethereum) return alert("MetaMask not detected");
+    if (!window.confirm("Are you sure you want to execute this proposal? This action cannot be undone.")) return;
+    
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, abi, signer);
+      const contract = getContract(signer);
       
       const tx = await contract.executeProposal(proposalId);
       await tx.wait();
@@ -221,27 +373,35 @@ function App() {
           Describe your grievance
         </label>
         <textarea
-          className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+          className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline mb-3"
           rows={4}
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="e.g., Water leakage near my house"
         />
+        {aiResult && (
+          <div className="mb-4 p-3 bg-blue-50 rounded-md">
+            <p className="text-sm text-gray-700">
+              <span className="font-medium">AI Prediction:</span> This complaint is about "{aiResult.label}" with {Math.round(aiResult.score * 100)}% confidence
+            </p>
+          </div>
+        )}
         <button
           type="submit"
-          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mt-4"
+          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mt-2 w-full"
+          disabled={loading}
         >
-          Submit Complaint
+          {loading ? 'Submitting...' : 'Submit Complaint'}
         </button>
       </form>
       {loading && <p className="text-gray-700">Processing...</p>}
-      {result && (
+      {aiResult && (
         <div className="mt-4 p-4 bg-green-100 rounded">
-          <p><strong>Predicted Category:</strong> {result.label}</p>
-          <p><strong>Confidence:</strong> {(result.score * 100).toFixed(2)}%</p>
+          <p><strong>Predicted Category:</strong> {aiResult.label}</p>
+          <p><strong>Confidence:</strong> {(aiResult.score * 100).toFixed(2)}%</p>
         </div>
       )}
-    {error && (
+      {error && (
         <p className="mt-2 text-red-600">{error}</p>
       )}
       {txHash && (
@@ -258,7 +418,12 @@ function App() {
               <div key={c.id} className="bg-white rounded-lg shadow-md p-4 border border-gray-100">
                 <div className="flex justify-between items-start">
                   <div>
-                    <p className="text-sm text-gray-500">ID #{c.id}</p>
+                    <div className="flex justify-between items-center">
+                      <p className="text-sm text-gray-500">ID #{c.id}</p>
+                      <span className="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800">
+                        {categories[c.category] || 'Other'}
+                      </span>
+                    </div>
                     <p className="font-medium text-lg mt-1">{c.description}</p>
                     <p className="text-sm mt-1">
                       Status: <span className={`font-medium ${
@@ -307,34 +472,35 @@ function App() {
                           ></div>
                         </div>
                         <span className="ml-2 text-xs text-gray-600">
-                          {p.forVotes} / {p.forVotes + p.againstVotes}
+                          {p.forVotes} for / {p.againstVotes} against
                         </span>
                       </div>
                       
-                      {isOfficial && !p.hasVoted && (
+                      {isOfficial && (
                         <div className="flex space-x-2 mt-2">
                           <button
                             onClick={() => handleVote(p.id, true)}
-                            className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200"
+                            className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50"
+                            disabled={p.executed}
                           >
-                            Vote For
+                            👍 Vote For
                           </button>
                           <button
                             onClick={() => handleVote(p.id, false)}
-                            className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+                            className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
+                            disabled={p.executed}
                           >
-                            Vote Against
+                            👎 Vote Against
                           </button>
+                          {isOfficial && p.voteEnd < Math.floor(Date.now() / 1000) && !p.executed && (
+                            <button
+                              onClick={() => handleExecuteProposal(p.id)}
+                              className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 ml-auto"
+                            >
+                              🚀 Execute Proposal
+                            </button>
+                          )}
                         </div>
-                      )}
-                      
-                      {isOfficial && p.voteEnd < Math.floor(Date.now() / 1000) && !p.executed && (
-                        <button
-                          onClick={() => handleExecuteProposal(p.id)}
-                          className="mt-2 px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-                        >
-                          Execute Proposal
-                        </button>
                       )}
                     </div>
                   ))}

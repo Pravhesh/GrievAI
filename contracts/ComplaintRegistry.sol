@@ -13,12 +13,23 @@ contract ComplaintRegistry {
         Resolved,
         Escalated
     }
+    
+    enum Category {
+        Water,
+        Road,
+        Electricity,
+        Sanitation,
+        Health,
+        Education,
+        Other
+    }
 
     struct Complaint {
         address complainant;
         string description;
         uint256 timestamp;
         Status status;
+        Category category;
     }
 
     uint256 public complaintCount;
@@ -76,7 +87,7 @@ contract ComplaintRegistry {
         emit OfficialRemoved(_official);
     }
 
-    event ComplaintSubmitted(uint256 indexed id, address indexed complainant, string description);
+    event ComplaintSubmitted(uint256 indexed id, address indexed complainant, string description, Category category);
     event ComplaintResolved(uint256 indexed id);
     event ComplaintEscalated(uint256 indexed id);
 
@@ -101,19 +112,19 @@ contract ComplaintRegistry {
 
     /**
      * @notice Submit a new grievance
-     * @param description Free-text complaint description
-     * @return id Complaint ID
+     * @param _description Free-text complaint description
+     * @param _category Category of the complaint (0=Water, 1=Road, 2=Electricity, 3=Sanitation, 4=Health, 5=Education, 6=Other)
      */
-    function submitComplaint(string calldata description) external returns (uint256 id) {
-        require(bytes(description).length > 0, "Empty description");
-        id = ++complaintCount;
-        complaints[id] = Complaint({
+    function submitComplaint(string memory _description, Category _category) external {
+        complaintCount++;
+        complaints[complaintCount] = Complaint({
             complainant: msg.sender,
-            description: description,
+            description: _description,
             timestamp: block.timestamp,
-            status: Status.Submitted
+            status: Status.Submitted,
+            category: _category
         });
-        emit ComplaintSubmitted(id, msg.sender, description);
+        emit ComplaintSubmitted(complaintCount, msg.sender, _description, _category);
     }
 
     /**
