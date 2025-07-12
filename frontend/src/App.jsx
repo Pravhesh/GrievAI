@@ -94,55 +94,43 @@ function App() {
       
       console.log("Contract instance created with address:", NORMALIZED_ADDRESS);
       
-      try {
-        // First, try with the category index as a number
-        console.log("Attempting to submit with category as number:", categoryIndex);
-        
-        // Get the function fragment to check if it exists
-        const submitFunction = contract.interface.getFunction('submitComplaint');
-        console.log("Submit function found:", submitFunction);
-        
-        // Encode the function call data manually to see what's being sent
-        const callData = contract.interface.encodeFunctionData('submitComplaint', [text, categoryIndex]);
-        console.log("Encoded call data:", callData);
-        
-        // Send the transaction with explicit data
-        const tx = await signer.sendTransaction({
-          to: CONTRACT_ADDRESS,
-          data: callData,
-          gasLimit: 1000000,
-          gasPrice: await provider.getFeeData().then(feeData => feeData.gasPrice * 2n)
-        });
-        
-        console.log("Transaction sent:", tx.hash);
-        return tx;
-      } catch (firstError) {
-        console.log("First attempt failed, trying with BigInt...", firstError);
-        
-        // If that fails, try with BigInt
-        try {
-          const tx = await contract.submitComplaint(text, BigInt(categoryIndex), {
-            gasLimit: 1000000,
-            gasPrice: await provider.getFeeData().then(feeData => feeData.gasPrice * 2n)
-          });
-          return tx;
-        } catch (secondError) {
-          console.error("Second attempt failed:", secondError);
-          throw new Error(`Failed to submit complaint: ${secondError.message}`);
+      // Debug: ensure contract code exists on-chain before submitting
+      {
+        const code = await provider.getCode(CONTRACT_ADDRESS);
+        console.log('🚧 Debug – deployed code length:', code.length);
+        if (code === '0x') {
+          console.error('❌ No contract code found at address. Did you redeploy?');
+          throw new Error('Contract not deployed at specified address');
         }
       }
-      setTxHash(tx.hash);
-      await tx.wait();
       
-      // 3. Refresh complaints
-      await loadComplaints(signer);
-      
-      // Clear form and show success message
-      setText("");
-      setAiResult(null);
-      
-      // Show success message with category
-      alert(`✅ Complaint submitted successfully!\n\nCategory: ${predictedCategory}`);
+      try {
+        const tx = await contract.submitComplaint(text, categoryIndex);
+        console.log("Transaction sent:", tx.hash);
+        const submittedTx = tx;
+        
+        setTxHash(submittedTx.hash);
+        await submittedTx.wait();
+        
+        // 3. Refresh complaints
+        await loadComplaints(signer);
+        
+        // Clear form and show success message
+        setText("");
+        setAiResult(null);
+        
+        // Show success message with category
+        alert(`✅ Complaint submitted successfully!\n\nCategory: ${predictedCategory}`);
+      } catch (err) {
+        console.error("Error in handleSubmit:", err);
+        const errorMessage = err.response?.data?.detail || 
+                           err.message || 
+                           "Failed to submit complaint";
+        setError(errorMessage);
+        alert(`❌ Error: ${errorMessage}`);
+      } finally {
+        setLoading(false);
+      }
     } catch (err) {
       console.error("Error in handleSubmit:", err);
       const errorMessage = err.response?.data?.detail || 
@@ -157,21 +145,33 @@ function App() {
 
   // Load complaints and check official status
   const loadComplaints = async (signer) => {
+    console.log('Attempting to load complaints...');
     if (!window.ethereum) return;
     try {
       setComplaintsLoading(true);
       const provider = new ethers.BrowserProvider(window.ethereum);
+      console.log('Provider and contract initialized.');
       const contract = getContract(provider);
       
+      // Quick debug: is contract deployed?
+      const code = await provider.getCode(CONTRACT_ADDRESS);
+      console.log('Deployed code length:', code.length);
+      if (code === '0x') {
+        console.error('No contract code found at address. Did you redeploy?');
+      }
+
       // Load complaints
       const count = await contract.complaintCount();
+      console.log('Total complaints to load:', count);
       const total = Number(count);
       const ids = Array.from({ length: total }, (_, i) => i + 1);
       
       const all = await Promise.all(
         ids.map(async (id) => {
+          console.log(`Loading complaint with ID: ${id}`);
           try {
             const c = await contract.complaints(id);
+            console.log('Complaint loaded:', c);
             return {
               id,
               complainant: c.complainant,
@@ -189,6 +189,7 @@ function App() {
       
       // Filter out any null values from failed fetches
       const validComplaints = all.filter(c => c !== null);
+      console.log('All valid complaints loaded:', validComplaints);
       setComplaints(validComplaints.reverse());
       
       // Load proposals if official
@@ -202,12 +203,15 @@ function App() {
           
           if (officialStatus) {
             const proposalCount = await contract.proposalCount();
+            console.log('Total proposals to load:', proposalCount);
             const proposalIds = Array.from({ length: Number(proposalCount) }, (_, i) => i + 1);
             
             const allProposals = await Promise.all(
               proposalIds.map(async (id) => {
+                console.log(`Loading proposal with ID: ${id}`);
                 try {
                   const p = await contract.proposals(id);
+                  console.log('Proposal loaded:', p);
                   return {
                     id,
                     complaintId: p.complaintId.toString(),
@@ -225,6 +229,7 @@ function App() {
                 }
               })
             ).then(proposals => proposals.filter(p => p !== null));
+            console.log('All valid proposals loaded:', allProposals);
             setProposals(allProposals);
           }
         } catch (err) {
@@ -235,6 +240,7 @@ function App() {
       console.error("Error loading data:", err);
       setError("Failed to load complaints. Please try again later.");
     } finally {
+      console.log('Complaints loading complete.');
       setComplaintsLoading(false);
     }
   };
