@@ -15,7 +15,7 @@ export default function AppRedesign() {
   }, []);
 
   return (
-    <main className="min-h-screen flex flex-col bg-gradient-to-br from-sky-200 via-rose-50 to-emerald-200 text-gray-800 font-sans">
+    <main className="min-h-screen flex flex-col bg-gradient-to-br from-indigo-600 via-purple-600 to-emerald-500 text-gray-800 font-sans">
       {/* Tailwind test banner */}
       <div className="bg-amber-300 text-center text-sm font-medium py-1">Tailwind CSS Loaded ✔️</div>
 
