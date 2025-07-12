@@ -5,7 +5,8 @@
   "description": "GrievAI decentralized grievance redressal MVP",
   "scripts": {
     "test": "hardhat test",
-    "compile": "hardhat compile"
+    "compile": "hardhat compile",
+    "auto-escalate": "node scripts/autoEscalate.js"
   },
   "devDependencies": {
     "hardhat": "^2.20.0",

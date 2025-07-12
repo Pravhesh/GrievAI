@@ -31,10 +31,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load model (allow override via env for smaller/fine-tuned checkpoint)
+# Load models lazily to improve startup time
 MODEL_NAME = os.getenv("HF_MODEL", "facebook/bart-large-mnli")
-logger.info(f"Loading zero-shot model: {MODEL_NAME}")
-classifier = pipeline("zero-shot-classification", model=MODEL_NAME)
+IMAGE_MODEL_NAME = os.getenv("HF_IMAGE_MODEL", "openai/clip-vit-base-patch32")
+
+classifier = None  # text classifier
+image_classifier = None  # image classifier
+
+def get_text_classifier():
+    global classifier
+    if classifier is None:
+        logger.info(f"Loading text model: {MODEL_NAME}")
+        classifier = pipeline("zero-shot-classification", model=MODEL_NAME)
+    return classifier
+
+def get_image_classifier():
+    global image_classifier
+    if image_classifier is None:
+        logger.info(f"Loading image model: {IMAGE_MODEL_NAME}")
+        image_classifier = pipeline("zero-shot-image-classification", model=IMAGE_MODEL_NAME)
+    return image_classifier
 
 # Map of possible AI labels to our supported categories
 CATEGORY_MAPPING = {
@@ -96,10 +112,11 @@ async def classify_complaint(complaint: ComplaintIn):
         # Run blocking classification in thread pool with timeout
         loop = asyncio.get_running_loop()
         try:
+            clf = get_text_classifier()
             result = await asyncio.wait_for(
                 loop.run_in_executor(
                     None,
-                    lambda: classifier(
+                    lambda: clf(
                         complaint.text,
                         candidate_labels=CANDIDATE_LABELS,
                         multi_label=False
@@ -151,6 +168,59 @@ import httpx
 UPSTREAM_RPC_URL = os.getenv("UPSTREAM_RPC_URL", "https://rpc.sepolia.org")
 
 from notifications import send_email, send_sms
+from typing import Optional
+from pydantic import BaseModel
+
+class ImageIn(BaseModel):
+    image_url: str
+
+class ImageOut(BaseModel):
+    label: str
+    score: float
+    original_label: str
+
+@app.post("/classify_image", response_model=ImageOut)
+async def classify_image(image_in: ImageIn):
+    try:
+        if not image_in.image_url:
+            raise HTTPException(status_code=400, detail="image_url required")
+
+        cache_key = sha256(image_in.image_url.encode()).hexdigest()
+        if cache_key in cache:
+            return cache[cache_key]
+
+        clf = get_image_classifier()
+        loop = asyncio.get_running_loop()
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: clf(
+                        image_in.image_url,
+                        candidate_labels=CANDIDATE_LABELS,
+                        threshold=0.0
+                    )
+                ),
+                timeout=CLASSIFICATION_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(status_code=503, detail="Classification timed out")
+
+        top = result[0]
+        mapped = CATEGORY_MAPPING.get(top["label"], "Other")
+        response = {
+            "label": mapped,
+            "score": float(top["score"]),
+            "original_label": top["label"]
+        }
+        cache[cache_key] = response
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Image classification error: %s", e)
+        raise HTTPException(status_code=503, detail="Internal image classification error")
+
 
 @app.post("/notify")
 async def send_notification(payload: dict):
