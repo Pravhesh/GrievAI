@@ -15,7 +15,7 @@ GrievAI is a civic tech platform that integrates **AI agents**, **Ethereum smart
 
 ---
 
-## ✅ MVP Core Features (Hackathon-Ready)
+## ✅ MVP Core Features
 
 | Component | Description |
 |----------|-------------|
