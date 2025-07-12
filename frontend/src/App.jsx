@@ -24,6 +24,8 @@ import "./index.css";
 import Header from "./components/Header";
 import TabSwitcher from "./components/TabSwitcher";
 import Spinner from "./components/Spinner";
+import OverlaySpinner from "./components/OverlaySpinner";
+import SkeletonComplaintCard from "./components/SkeletonComplaintCard";
 import ToastContainer from "./components/ToastContainer";
 
 // Helper to format addresses
@@ -453,6 +455,7 @@ function App() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-start p-4">
       <Header account={account} connectWallet={connectWallet} />
+      <OverlaySpinner show={isBusy} />
       <TabSwitcher active={activeTab} onChange={setActiveTab} />
       {false && !account && (
         <button
@@ -543,7 +546,11 @@ function App() {
         </p>
       )}
       {activeTab === 'complaints' && complaintsLoading && (
-        <p className="mt-4 text-gray-700">Loading complaints...</p>
+        <div className="w-full max-w-4xl mt-6 grid gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <SkeletonComplaintCard key={i} />
+          ))}
+        </div>
       )}
       {activeTab === 'complaints' && !complaintsLoading && (
         <div className="w-full max-w-4xl mt-6">
