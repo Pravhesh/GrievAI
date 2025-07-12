@@ -16,6 +16,9 @@ export default function AppRedesign() {
 
   return (
     <main className="min-h-screen flex flex-col bg-gradient-to-br from-sky-200 via-rose-50 to-emerald-200 text-gray-800 font-sans">
+      {/* Tailwind test banner */}
+      <div className="bg-amber-300 text-center text-sm font-medium py-1">Tailwind CSS Loaded ✔️</div>
+
       {/* NAVBAR */}
       <header className="w-full px-6 sm:px-10 py-4 flex items-center justify-between">
         <h1 className="text-2xl font-black tracking-tight text-primary">GrievAI</h1>
