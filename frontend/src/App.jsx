@@ -3,7 +3,7 @@ import axios from "axios";
 import { ethers } from "ethers";
 import contractData from "./contracts/ComplaintRegistry.json";
 const abi = contractData.abi;
-import { CONTRACT_ADDRESS, SEPOLIA_CHAIN_ID } from "./config";
+import { CONTRACT_ADDRESS, SEPOLIA_CHAIN_ID, SEPOLIA_RPC_URL } from "./config";
 
 // Safely normalize contract address (skip checksum if invalid)
 let NORMALIZED_ADDRESS;
@@ -14,6 +14,9 @@ try {
   console.warn("Warning: CONTRACT_ADDRESS failed checksum validation; using raw address");
   NORMALIZED_ADDRESS = CONTRACT_ADDRESS.toLowerCase();
 }
+
+// Read-only provider for users without injected wallets
+const READONLY_PROVIDER = new ethers.JsonRpcProvider(SEPOLIA_RPC_URL);
 
 // Helper to get a Contract instance from any provider or signer
 const getContract = (providerOrSigner) => new ethers.Contract(NORMALIZED_ADDRESS, abi, providerOrSigner);
@@ -146,10 +149,16 @@ function App() {
   // Load complaints and check official status
   const loadComplaints = async (signer) => {
     console.log('Attempting to load complaints...');
-    if (!window.ethereum) return;
     try {
       setComplaintsLoading(true);
-      const provider = new ethers.BrowserProvider(window.ethereum);
+      let provider;
+      if (window.ethereum) {
+        // Prefer injected provider for up-to-date data and the ability to sign transactions
+        provider = new ethers.BrowserProvider(window.ethereum);
+      } else {
+        console.log('No injected wallet detected – using read-only RPC provider');
+        provider = READONLY_PROVIDER;
+      }
       console.log('Provider and contract initialized.');
       const contract = getContract(provider);
       
@@ -353,6 +362,11 @@ function App() {
     }
   };
 
+  // Initial load (read-only if no wallet)
+  useEffect(() => {
+    loadComplaints(null);
+  }, []);
+
   // Fetch data on wallet connect & after transactions
   useEffect(() => {
     const init = async () => {
@@ -372,11 +386,36 @@ function App() {
         <button
           onClick={async () => {
             if (!window.ethereum) return alert("MetaMask not detected");
-            const [addr] = await window.ethereum.request({ method: "eth_requestAccounts" });
-            const chainId = await window.ethereum.request({ method: "eth_chainId" });
-            if (chainId !== SEPOLIA_CHAIN_ID) {
-              return alert("Switch MetaMask to Sepolia network");
+            let currentChainId = await window.ethereum.request({ method: "eth_chainId" });
+            if (currentChainId !== SEPOLIA_CHAIN_ID) {
+              try {
+                await window.ethereum.request({
+                  method: "wallet_switchEthereumChain",
+                  params: [{ chainId: SEPOLIA_CHAIN_ID }],
+                });
+              } catch (switchError) {
+                // 4902 = chain not added to MetaMask yet
+                if (switchError.code === 4902) {
+                  try {
+                    await window.ethereum.request({
+                      method: "wallet_addEthereumChain",
+                      params: [{
+                        chainId: SEPOLIA_CHAIN_ID,
+                        chainName: "Sepolia Testnet",
+                        rpcUrls: [SEPOLIA_RPC_URL],
+                        nativeCurrency: { name: "SepoliaETH", symbol: "ETH", decimals: 18 },
+                        blockExplorerUrls: ["https://sepolia.etherscan.io"],
+                      }],
+                    });
+                  } catch (addError) {
+                    return alert("Please add the Sepolia network to MetaMask to continue.");
+                  }
+                } else {
+                  return alert("Please switch to the Sepolia network in MetaMask.");
+                }
+              }
             }
+            const [addr] = await window.ethereum.request({ method: "eth_requestAccounts" });
             setAccount(addr);
           }}
           className="mb-4 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded"
