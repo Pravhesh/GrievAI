@@ -620,7 +620,6 @@ function App() {
                       
                       {isOfficial && (
                         <div className="flex items-center space-x-2 mt-2">
-                            >
                           <button
                             onClick={() => handleVote(p.id, true)}
                             className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50"
