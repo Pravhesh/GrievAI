@@ -3,6 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from transformers import pipeline
+from cachetools import TTLCache
+import os
+import asyncio
+from hashlib import sha256
 import logging
 import sys
 
@@ -27,8 +31,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Zero-shot classifier for quick hackathon demo
-classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
+# Load model (allow override via env for smaller/fine-tuned checkpoint)
+MODEL_NAME = os.getenv("HF_MODEL", "facebook/bart-large-mnli")
+logger.info(f"Loading zero-shot model: {MODEL_NAME}")
+classifier = pipeline("zero-shot-classification", model=MODEL_NAME)
 
 # Map of possible AI labels to our supported categories
 CATEGORY_MAPPING = {
@@ -43,6 +49,12 @@ CATEGORY_MAPPING = {
     "Spam": "Other",
     "Other": "Other"
 }
+
+# === Simple in-memory cache ===
+CACHE_TTL_SEC = int(os.getenv("CACHE_TTL_SEC", "3600"))  # default 1h
+CACHE_MAXSIZE = int(os.getenv("CACHE_MAXSIZE", "1024"))
+cache: TTLCache = TTLCache(maxsize=CACHE_MAXSIZE, ttl=CACHE_TTL_SEC)
+logger.info(f"Initialized TTL cache – size {CACHE_MAXSIZE}, ttl {CACHE_TTL_SEC}s")
 
 # These are the categories we'll use for classification
 CANDIDATE_LABELS = list(set(CATEGORY_MAPPING.keys()))
@@ -60,6 +72,8 @@ class ClassificationOut(BaseModel):
     score: float
 
 
+CLASSIFICATION_TIMEOUT = int(os.getenv("CLASSIFICATION_TIMEOUT_SEC", "20"))  # max seconds per request
+
 @app.post("/classify", response_model=ClassificationOut)
 async def classify_complaint(complaint: ComplaintIn):
     try:
@@ -69,14 +83,34 @@ async def classify_complaint(complaint: ComplaintIn):
                 detail="Text cannot be empty"
             )
             
-        logger.info(f"Classifying complaint: {complaint.text[:100]}...")
-        
-        # Get classification
-        result = classifier(
-            complaint.text,
-            candidate_labels=CANDIDATE_LABELS,
-            multi_label=False
-        )
+        normalized_text = complaint.text.strip().lower()
+        cache_key = sha256(normalized_text.encode()).hexdigest()
+
+        # Check cache first
+        if cache_key in cache:
+            logger.info("Cache hit – returning previous classification result")
+            return cache[cache_key]
+
+        logger.info(f"Cache miss – classifying complaint: {complaint.text[:80]}…")
+
+        # Run blocking classification in thread pool with timeout
+        loop = asyncio.get_running_loop()
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None,
+                    lambda: classifier(
+                        complaint.text,
+                        candidate_labels=CANDIDATE_LABELS,
+                        multi_label=False
+                    )
+                ),
+                timeout=CLASSIFICATION_TIMEOUT
+            )
+        except asyncio.TimeoutError:
+            logger.warning("Classification timed out")
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                                detail="Classification timed out")
         
         # Get the top label and its score
         top_label = result["labels"][0]
@@ -90,22 +124,21 @@ async def classify_complaint(complaint: ComplaintIn):
             f"Mapped: {standardized_label}"
         )
         
-        return {
+        response = {
             "label": standardized_label,
             "score": top_score,
             "original_label": top_label
         }
+        # Store in cache
+        cache[cache_key] = response
+        return response
         
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error in classification: {str(e)}", exc_info=True)
-        # Return 'Other' category in case of errors
-        return {
-            "label": "Other",
-            "score": 1.0,
-            "error": str(e)
-        }
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="Internal classification error")
 
 @app.get("/health")
 async def health_check():
