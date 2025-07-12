@@ -619,18 +619,19 @@ function App() {
                       </div>
                       
                       {isOfficial && (
-                        <div className="flex space-x-2 mt-2">
+                        <div className="flex items-center space-x-2 mt-2">
+                            >
                           <button
                             onClick={() => handleVote(p.id, true)}
                             className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50"
-                            disabled={p.executed}
+                            disabled={p.executed || p.voteEnd < Math.floor(Date.now() / 1000)}
                           >
                             👍 Vote For
                           </button>
                           <button
                             onClick={() => handleVote(p.id, false)}
                             className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
-                            disabled={p.executed}
+                            disabled={p.executed || p.voteEnd < Math.floor(Date.now() / 1000)}
                           >
                             👎 Vote Against
                           </button>
@@ -642,8 +643,34 @@ function App() {
                               🚀 Execute Proposal
                             </button>
                           )}
-                        </div>
-                      )}
+                            {p.voteEnd < Math.floor(Date.now() / 1000) || p.executed ? (
+      <span className="text-xs bg-gray-200 text-gray-600 px-2 py-1 rounded">Voting closed</span>
+    ) : (
+      <>
+        <button
+          onClick={() => handleVote(p.id, true)}
+          className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200"
+        >
+          👍 Vote For
+        </button>
+        <button
+          onClick={() => handleVote(p.id, false)}
+          className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200"
+        >
+          👎 Vote Against
+        </button>
+      </>
+    )}
+    {p.voteEnd < Math.floor(Date.now() / 1000) && !p.executed && (
+      <button
+        onClick={() => handleExecuteProposal(p.id)}
+        className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 ml-auto"
+      >
+        🚀 Execute Proposal
+      </button>
+    )}
+  </div>
+)}
                     </div>
                   ))}
               </div>
