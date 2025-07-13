@@ -183,8 +183,8 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Testimonials */}
-      <section className="py-24 bg-white">
+      {/* Join the Movement */}
+      <section className="py-24 bg-gradient-to-br from-green-50 to-teal-50">
         <div className="max-w-7xl mx-auto px-6 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
@@ -193,16 +193,18 @@ export default function LandingPage() {
             viewport={{ once: true }}
             className="text-center mb-16"
           >
-            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">Trusted by Communities</h2>
+            <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">Join the Movement</h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              See what leaders and citizens are saying about GrievAI
+              Be a part of the change in grievance management. Collaborate with innovators, propose new ideas, and help us build a better future.
             </p>
           </motion.div>
 
-          <div className="grid md:grid-cols-3 gap-8">
-            {testimonials.map((testimonial, index) => (
-              <TestimonialCard key={index} {...testimonial} index={index} />
-            ))}
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+            <Link href="/community" className="btn-primary group">
+              Join the Community
+              <ArrowRight className="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            </Link>
+            <button className="btn-secondary">Learn More</button>
           </div>
         </div>
       </section>
