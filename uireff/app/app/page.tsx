@@ -28,6 +28,7 @@ export default function AppPage() {
   const [isOfficial, setIsOfficial] = useState(false)
   const [loading, setLoading] = useState(false)
   const [toasts, setToasts] = useState<any[]>([])
+  const [filterCriteria, setFilterCriteria] = useState({ category: 'All', status: 'All' })
 
   // Stats
   const [stats, setStats] = useState({
@@ -153,7 +154,7 @@ export default function AppPage() {
     }
   }
 
-  const handleSubmitComplaint = async (text: string) => {
+  const handleSubmitComplaint = async (text: string, proofData: any) => {
     if (!account) {
       addToast("Please connect your wallet first", "error")
       return
@@ -162,15 +163,20 @@ export default function AppPage() {
     try {
       setLoading(true)
 
-      // AI Classification (mock)
-      let predictedCategory = "Other"
+      // Real AI classification via internal API
+      let predictedCategory = "Other";
       try {
-        // In real implementation, call your AI service
-        // const aiResponse = await axios.post('http://localhost:8000/classify', { text })
-        // predictedCategory = aiResponse.data.label || 'Other'
-        predictedCategory = "Water" // Mock classification
+        const res = await fetch("/api/classify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, labels: categories }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          predictedCategory = data.label || "Other";
+        }
       } catch (aiErr) {
-        console.warn("AI service unavailable, defaulting to Other")
+        console.warn("AI service unavailable, defaulting to Other");
       }
 
       const categoryIndex = categories.indexOf(predictedCategory)
@@ -182,6 +188,7 @@ export default function AppPage() {
       const newComplaint = {
         id: complaints.length + 1,
         description: text,
+      proof: proofData || null,
         category: categoryIndex,
         status: 0,
         complainant: account,
@@ -270,6 +277,21 @@ export default function AppPage() {
       setLoading(false)
     }
   }
+
+  const filterComplaints = () => {
+    return complaints.filter(complaint => {
+      const categoryMatch = filterCriteria.category === 'All' || complaint.category === categories.indexOf(filterCriteria.category);
+      const statusMatch = filterCriteria.status === 'All' || complaint.status === parseInt(filterCriteria.status);
+      return categoryMatch && statusMatch;
+    });
+  };
+
+  const handleFilterChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setFilterCriteria(prev => ({ ...prev, [name]: value }));
+  };
+
+  const filteredComplaints = filterComplaints();
 
   useEffect(() => {
     if (account) {
@@ -376,17 +398,17 @@ export default function AppPage() {
               <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-gray-900">Community Complaints</h2>
                 <div className="flex items-center space-x-4">
-                  <select className="input-field max-w-xs">
-                    <option>All Categories</option>
-                    {categories.map((cat) => (
-                      <option key={cat}>{cat}</option>
+                  <select name="category" onChange={handleFilterChange} value={filterCriteria.category}>
+                    <option value="All">All Categories</option>
+                    {categories.map((cat, index) => (
+                      <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>
-                  <select className="input-field max-w-xs">
-                    <option>All Status</option>
-                    <option>Submitted</option>
-                    <option>Resolved</option>
-                    <option>Escalated</option>
+                  <select name="status" onChange={handleFilterChange} value={filterCriteria.status}>
+                    <option value="All">All Statuses</option>
+                    <option value="0">Submitted</option>
+                    <option value="1">Resolved</option>
+                    <option value="2">Escalated</option>
                   </select>
                 </div>
               </div>
@@ -403,7 +425,7 @@ export default function AppPage() {
                 </div>
               ) : (
                 <div className="grid gap-6">
-                  {complaints.map((complaint, index) => (
+                  {filteredComplaints.map((complaint, index) => (
                     <ComplaintCard
                       key={complaint.id}
                       complaint={complaint}
