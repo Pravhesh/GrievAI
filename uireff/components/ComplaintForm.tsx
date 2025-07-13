@@ -5,8 +5,6 @@ import type React from "react"
 import { useState } from "react"
 import { motion } from "framer-motion"
 import { Send, Sparkles, Wallet } from "lucide-react"
-// @ts-ignore – snarkjs has no TS types by default
-import { groth16 } from 'snarkjs';
 
 interface ComplaintFormProps {
   onSubmit: (text: string, proofData: any) => Promise<void>
@@ -22,16 +20,16 @@ export default function ComplaintForm({ onSubmit, loading, account }: ComplaintF
 
   const generateProof = async (input: any) => {
     try {
-      const { proof, publicSignals } = await groth16.fullProve(
-        input,
-        '/zk/circuit.wasm',
-        '/zk/circuit_final.zkey'
-      );
-      console.log('Proof: ', proof);
-      console.log('Public Signals: ', publicSignals);
-      return { proof, publicSignals };
+      const res = await fetch("/api/prove", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ input }),
+      });
+      if (!res.ok) throw new Error("Proof generation API failed");
+      const data = await res.json();
+      return data; // { proof, publicSignals }
     } catch (error) {
-      console.error('Error generating proof: ', error);
+      console.error("Error generating proof: ", error);
       return null;
     }
   };
