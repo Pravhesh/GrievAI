@@ -5,9 +5,11 @@ import type React from "react"
 import { useState } from "react"
 import { motion } from "framer-motion"
 import { Send, Sparkles, Wallet } from "lucide-react"
+// @ts-ignore – snarkjs has no TS types by default
+import { groth16 } from 'snarkjs';
 
 interface ComplaintFormProps {
-  onSubmit: (text: string) => Promise<void>
+  onSubmit: (text: string, proofData: any) => Promise<void>
   loading: boolean
   account: string | null
 }
@@ -15,28 +17,85 @@ interface ComplaintFormProps {
 export default function ComplaintForm({ onSubmit, loading, account }: ComplaintFormProps) {
   const [text, setText] = useState("")
   const [aiPrediction, setAiPrediction] = useState<any>(null)
+  const [proofStatus, setProofStatus] = useState('');
+  const [ipfsStatus, setIpfsStatus] = useState('');
+
+  const generateProof = async (input: any) => {
+    try {
+      const { proof, publicSignals } = await groth16.fullProve(
+        input,
+        '/zk/circuit.wasm',
+        '/zk/circuit_final.zkey'
+      );
+      console.log('Proof: ', proof);
+      console.log('Public Signals: ', publicSignals);
+      return { proof, publicSignals };
+    } catch (error) {
+      console.error('Error generating proof: ', error);
+      return null;
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!text.trim()) return
+    e.preventDefault();
+    if (!text.trim()) return;
 
-    await onSubmit(text)
-    setText("")
-    setAiPrediction(null)
+    setProofStatus('Generating proof...');
+    const proofData = await generateProof({ text });
+    if (proofData) {
+      setProofStatus('Proof generated successfully');
+      console.log('ZK Proof generated successfully');
+      // Simulate IPFS upload
+      setIpfsStatus('Uploading to IPFS...');
+      setTimeout(() => {
+        setIpfsStatus('Uploaded to IPFS successfully');
+      }, 2000);
+      await onSubmit(text, proofData);
+    } else {
+      setProofStatus('Failed to generate proof');
+      await onSubmit(text, null);
+    }
+
+    setText("");
+    setAiPrediction(null);
   }
 
-  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setText(e.target.value)
+  const [typingTimer, setTypingTimer] = useState<NodeJS.Timeout | null>(null);
 
-    // Mock AI prediction
-    if (e.target.value.length > 20) {
-      setAiPrediction({
-        label: "Water",
-        confidence: 0.87,
-      })
-    } else {
-      setAiPrediction(null)
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setText(value);
+
+    if (typingTimer) clearTimeout(typingTimer);
+
+    if (value.trim().length < 5) {
+      setAiPrediction(null);
+      return;
     }
+
+    const newTimer = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/classify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: value,
+            labels: ["Water", "Electricity", "Sanitation", "Corruption", "Other"],
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setAiPrediction({ label: data.label, confidence: data.confidence });
+        } else {
+          setAiPrediction(null);
+        }
+      } catch (err) {
+        console.error("Classification error", err);
+        setAiPrediction(null);
+      }
+    }, 600); // debounce 600ms
+
+    setTypingTimer(newTimer);
   }
 
   if (!account) {
@@ -98,11 +157,15 @@ export default function ComplaintForm({ onSubmit, loading, account }: ComplaintF
                 <span className="font-medium text-violet-900">AI Classification</span>
               </div>
               <p className="text-sm text-violet-800">
-                This complaint appears to be about <strong>{aiPrediction.label}</strong> with{" "}
+                This complaint appears to be about <strong>{aiPrediction.label}</strong> with{' '}
                 <strong>{Math.round(aiPrediction.confidence * 100)}%</strong> confidence
               </p>
             </motion.div>
           )}
+
+          {/* Proof and IPFS Status */}
+          {proofStatus && <p className="text-sm text-gray-600">Proof Status: {proofStatus}</p>}
+          {ipfsStatus && <p className="text-sm text-gray-600">IPFS Status: {ipfsStatus}</p>}
 
           <button
             type="submit"
