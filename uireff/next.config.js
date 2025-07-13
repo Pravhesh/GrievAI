@@ -26,6 +26,8 @@ const nextConfig = {
         stream: false,
         util: false,
         assert: false,
+        fastfile: false,
+        ejs: false,
       };
     }
     return config;
