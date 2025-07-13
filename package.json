@@ -9,11 +9,12 @@
     "auto-escalate": "node scripts/autoEscalate.js"
   },
   "devDependencies": {
-    "hardhat": "^2.20.0",
-    "@nomicfoundation/hardhat-toolbox": "^3.0.0"
+    "@nomicfoundation/hardhat-toolbox": "^3.0.0",
+    "hardhat": "^2.20.0"
   },
   "dependencies": {
-    "ethers": "^6.9.0",
-    "dotenv": "^16.4.0"
+    "animejs": "^4.0.2",
+    "dotenv": "^16.4.0",
+    "ethers": "^6.9.0"
   }
 }
