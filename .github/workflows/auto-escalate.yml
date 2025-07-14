@@ -1,25 +1,25 @@
-name: Auto Escalate Complaints
+# name: Auto Escalate Complaints
 
-on:
-  schedule:
-    - cron: "0 * * * *" # every hour
-  workflow_dispatch:
+# on:
+#   schedule:
+#     - cron: "0 * * * *" # every hour
+#   workflow_dispatch:
 
-jobs:
-  escalate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Use Node.js 18
-        uses: actions/setup-node@v4
-        with:
-          node-version: 18
-          cache: "npm"
-      - name: Install deps
-        run: npm ci --omit=dev
-      - name: Run auto-escalate script
-        env:
-          RPC_URL: ${{ secrets.RPC_URL }}
-          PRIVATE_KEY: ${{ secrets.ESCALATOR_PRIVATE_KEY }}
-          CONTRACT_ADDRESS: ${{ secrets.CONTRACT_ADDRESS }}
-        run: npm run auto-escalate
+# jobs:
+#   escalate:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v3
+#       - name: Use Node.js 18
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: 18
+#           cache: "npm"
+#       - name: Install deps
+#         run: npm ci --omit=dev
+#       - name: Run auto-escalate script
+#         env:
+#           RPC_URL: ${{ secrets.RPC_URL }}
+#           PRIVATE_KEY: ${{ secrets.ESCALATOR_PRIVATE_KEY }}
+#           CONTRACT_ADDRESS: ${{ secrets.CONTRACT_ADDRESS }}
+#         run: npm run auto-escalate
