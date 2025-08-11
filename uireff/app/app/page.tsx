@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { FileText, Users, Vote, CheckCircle, Send, Eye } from "lucide-react"
+import { ethers, BrowserProvider, Contract } from "ethers"
+import ComplaintRegistryAbi from "@/abi/ComplaintRegistry.json"
 
 import AppHeader from "@/components/AppHeader"
 import ComplaintForm from "@/components/ComplaintForm"
@@ -13,7 +15,7 @@ import Toast from "@/components/Toast"
 import StatsCard from "@/components/StatsCard"
 
 // Contract configuration
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+const CONTRACT_ADDRESS = "0xd6460d886166a266F9fd42EAa9475a5397831996"
 const SEPOLIA_CHAIN_ID = "0xaa36a7"
 const SEPOLIA_RPC_URL = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL || "https://sepolia.infura.io/v3/YOUR_PROJECT_ID"
 
@@ -35,17 +37,30 @@ export default function AppPage() {
     totalComplaints: 0,
     resolvedComplaints: 0,
     activeProposals: 0,
-    participationRate: 0,
+    participationRate: 0, // Note: participation rate is hard to calculate on-chain without total official count
   })
 
   const addToast = (message: string, type: "success" | "error" | "info" = "success") => {
     const id = Date.now() + Math.random()
     setToasts((prev) => [...prev, { id, message, type }])
-    setTimeout(() => removeToast(id), 4000)
+    setTimeout(() => removeToast(id), 5000)
   }
 
   const removeToast = (id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id))
+  }
+
+  const getContract = async (signer = false) => {
+    if (!window.ethereum) {
+      addToast("Please install MetaMask", "error")
+      return null
+    }
+    const provider = new BrowserProvider(window.ethereum)
+    if (signer) {
+      const signer = await provider.getSigner()
+      return new Contract(CONTRACT_ADDRESS, ComplaintRegistryAbi, signer)
+    }
+    return new Contract(CONTRACT_ADDRESS, ComplaintRegistryAbi, provider)
   }
 
   const connectWallet = async () => {
@@ -57,7 +72,6 @@ export default function AppPage() {
     try {
       setIsConnecting(true)
 
-      // Check and switch to Sepolia if needed
       const chainId = await window.ethereum.request({ method: "eth_chainId" })
       if (chainId !== SEPOLIA_CHAIN_ID) {
         try {
@@ -88,12 +102,9 @@ export default function AppPage() {
       const [address] = await window.ethereum.request({ method: "eth_requestAccounts" })
       setAccount(address)
       addToast("Wallet connected successfully!", "success")
-
-      // Load data after connection
-      await loadData()
     } catch (error: any) {
       console.error("Wallet connection error:", error)
-      addToast("Failed to connect wallet", "error")
+      addToast(error.message || "Failed to connect wallet", "error")
     } finally {
       setIsConnecting(false)
     }
@@ -102,53 +113,80 @@ export default function AppPage() {
   const loadData = async () => {
     try {
       setLoading(true)
+      const contract = await getContract()
+      if (!contract) return
 
-      // Mock data for demonstration
-      const mockComplaints = [
-        {
-          id: 1,
-          description: "Water leakage in main street causing traffic issues",
-          category: 0,
-          status: 0,
-          complainant: "0x1234...5678",
-          timestamp: Date.now() - 86400000,
-        },
-        {
-          id: 2,
-          description: "Broken streetlight near school area",
-          category: 2,
-          status: 1,
-          complainant: "0x8765...4321",
-          timestamp: Date.now() - 172800000,
-        },
-      ]
+      const [complaintCountBigInt, proposalCountBigInt, isUserOfficial] = await Promise.all([
+        contract.complaintCount(),
+        contract.proposalCount(),
+        account ? contract.officials(account) : Promise.resolve(false),
+      ])
 
-      const mockProposals = [
-        {
-          id: 1,
-          complaintId: "1",
-          isEscalation: false,
-          forVotes: 15,
-          againstVotes: 3,
-          executed: false,
-          voteEnd: Math.floor(Date.now() / 1000) + 86400,
-        },
-      ]
+      const complaintCount = Number(complaintCountBigInt)
+      const proposalCount = Number(proposalCountBigInt)
 
-      setComplaints(mockComplaints)
-      setProposals(mockProposals)
+      const complaintsPromises = []
+      for (let i = 1; i <= complaintCount; i++) {
+        complaintsPromises.push(contract.getComplaint(i))
+      }
+
+      const proposalsPromises = []
+      for (let i = 1; i <= proposalCount; i++) {
+        proposalsPromises.push(contract.proposals(i))
+      }
+
+      const rawComplaints = await Promise.all(complaintsPromises)
+      const rawProposals = await Promise.all(proposalsPromises)
+
+      const parsedComplaints = rawComplaints.map((c, i) => ({
+        id: i + 1,
+        description: c.description,
+        category: Number(c.category),
+        status: Number(c.status),
+        complainant: c.complainant,
+        timestamp: Number(c.timestamp) * 1000,
+      })).filter(c => c.timestamp > 0).reverse() // Filter out empty complaints and reverse to show newest first
+
+      const parsedProposals = rawProposals.map((p, i) => ({
+        id: i + 1,
+        complaintId: p.complaintId.toString(),
+        isEscalation: p.isEscalation,
+        forVotes: Number(p.forVotes),
+        againstVotes: Number(p.againstVotes),
+        executed: p.executed,
+        voteEnd: Number(p.voteEnd),
+      })).reverse() // show newest first
+
+      setComplaints(parsedComplaints)
+      setProposals(parsedProposals)
+      setIsOfficial(isUserOfficial)
+
       setStats({
-        totalComplaints: mockComplaints.length,
-        resolvedComplaints: mockComplaints.filter((c) => c.status === 1).length,
-        activeProposals: mockProposals.filter((p) => !p.executed).length,
-        participationRate: 78,
+        totalComplaints: parsedComplaints.length,
+        resolvedComplaints: parsedComplaints.filter((c) => c.status === 1).length,
+        activeProposals: parsedProposals.filter((p) => !p.executed).length,
+        participationRate: 0, // Cannot calculate easily
       })
 
-      // Check if user is official (mock)
-      setIsOfficial(account?.toLowerCase().includes("a") || false)
+    } catch (error: any) {
+      console.error("Error loading blockchain data:", error)
+      addToast(error.message || "Failed to load blockchain data.", "error")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleTransaction = async (tx: any, successMessage: string) => {
+    try {
+      setLoading(true)
+      addToast("Sending transaction...", "info")
+      const receipt = await tx.wait()
+      addToast(successMessage, "success")
+      console.log("Transaction receipt:", receipt)
+      await loadData() // Refresh data after successful transaction
     } catch (error) {
-      console.error("Error loading data:", error)
-      addToast("Failed to load data", "error")
+      console.error("Transaction failed:", error)
+      addToast(error.reason || error.message || "Transaction failed", "error")
     } finally {
       setLoading(false)
     }
@@ -160,122 +198,54 @@ export default function AppPage() {
       return
     }
 
+    let predictedCategory = "Other"
     try {
       setLoading(true)
-
-      // Real AI classification via internal API
-      let predictedCategory = "Other";
-      try {
-        const res = await fetch("/api/classify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text, labels: categories }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          predictedCategory = data.label || "Other";
-        }
-      } catch (aiErr) {
-        console.warn("AI service unavailable, defaulting to Other");
+      const res = await fetch("/api/classify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, labels: categories }),
+      });
+      if (res.ok) {
+        const data = await res.json()
+        predictedCategory = data.label || "Other"
+      } else {
+        addToast("AI service failed, defaulting to 'Other'", "info")
       }
-
-      const categoryIndex = categories.indexOf(predictedCategory)
-
-      // Mock blockchain submission
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
-      // Add to complaints list
-      const newComplaint = {
-        id: complaints.length + 1,
-        description: text,
-      proof: proofData || null,
-        category: categoryIndex,
-        status: 0,
-        complainant: account,
-        timestamp: Date.now(),
-      }
-
-      setComplaints((prev) => [newComplaint, ...prev])
-      addToast(`Complaint submitted successfully! Category: ${predictedCategory}`, "success")
-    } catch (error: any) {
-      console.error("Error submitting complaint:", error)
-      addToast("Failed to submit complaint", "error")
+    } catch (aiErr) {
+      console.warn("AI service unavailable, defaulting to Other")
+      addToast("AI service unavailable, defaulting to 'Other'", "info")
     } finally {
       setLoading(false)
     }
+
+    const categoryIndex = categories.indexOf(predictedCategory)
+    const contract = await getContract(true)
+    if (!contract) return
+
+    const tx = await contract.submitComplaint(text, categoryIndex)
+    await handleTransaction(tx, `Complaint submitted! Category: ${predictedCategory}`)
   }
 
   const handleProposeAction = async (complaintId: number, isEscalation: boolean) => {
-    try {
-      setLoading(true)
-
-      // Mock proposal creation
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-
-      const newProposal = {
-        id: proposals.length + 1,
-        complaintId: complaintId.toString(),
-        isEscalation,
-        forVotes: 0,
-        againstVotes: 0,
-        executed: false,
-        voteEnd: Math.floor(Date.now() / 1000) + 86400,
-      }
-
-      setProposals((prev) => [...prev, newProposal])
-      addToast(`Proposal to ${isEscalation ? "escalate" : "resolve"} complaint created!`, "success")
-    } catch (error) {
-      console.error("Error creating proposal:", error)
-      addToast("Failed to create proposal", "error")
-    } finally {
-      setLoading(false)
-    }
+    const contract = await getContract(true)
+    if (!contract) return
+    const tx = await contract.proposeAction(complaintId, isEscalation)
+    await handleTransaction(tx, `Proposal to ${isEscalation ? "escalate" : "resolve"} created!`)
   }
 
   const handleVote = async (proposalId: number, support: boolean) => {
-    try {
-      setLoading(true)
-
-      // Mock voting
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      setProposals((prev) =>
-        prev.map((p) =>
-          p.id === proposalId
-            ? {
-                ...p,
-                forVotes: support ? p.forVotes + 1 : p.forVotes,
-                againstVotes: !support ? p.againstVotes + 1 : p.againstVotes,
-              }
-            : p,
-        ),
-      )
-
-      addToast(`Vote ${support ? "for" : "against"} proposal submitted!`, "success")
-    } catch (error) {
-      console.error("Error voting:", error)
-      addToast("Failed to submit vote", "error")
-    } finally {
-      setLoading(false)
-    }
+    const contract = await getContract(true)
+    if (!contract) return
+    const tx = await contract.castVote(proposalId, support)
+    await handleTransaction(tx, `Vote ${support ? "for" : "against"} proposal submitted!`)
   }
 
   const handleExecuteProposal = async (proposalId: number) => {
-    try {
-      setLoading(true)
-
-      // Mock execution
-      await new Promise((resolve) => setTimeout(resolve, 1500))
-
-      setProposals((prev) => prev.map((p) => (p.id === proposalId ? { ...p, executed: true } : p)))
-
-      addToast("Proposal executed successfully!", "success")
-    } catch (error) {
-      console.error("Error executing proposal:", error)
-      addToast("Failed to execute proposal", "error")
-    } finally {
-      setLoading(false)
-    }
+    const contract = await getContract(true)
+    if (!contract) return
+    const tx = await contract.executeProposal(proposalId)
+    await handleTransaction(tx, "Proposal executed successfully!")
   }
 
   const filterComplaints = () => {

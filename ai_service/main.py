@@ -167,7 +167,7 @@ import httpx
 
 UPSTREAM_RPC_URL = os.getenv("UPSTREAM_RPC_URL", "https://rpc.sepolia.org")
 
-from notifications import send_email, send_sms
+from .notifications import send_email, send_sms
 from typing import Optional
 from pydantic import BaseModel
 
